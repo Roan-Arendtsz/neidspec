@@ -1,4 +1,4 @@
-from .hpfspec import *
+from .neidspec import *
 from .target import *
 from .bary import *
 from .utils import *
