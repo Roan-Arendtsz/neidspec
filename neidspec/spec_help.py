@@ -17,7 +17,7 @@ import h5py
 import astropy.time
 import astropy.io
 import crosscorr
-import hpfspec
+import neidspec
 from . import utils
 from . import rv_utils
 from . import rotbroad_help
@@ -816,8 +816,8 @@ def vsini_from_hpf_spectra(ftarg,fcal,eps=0.6,
         - Generally order 5 is the best behaved (generally I only use orders 4,5,6,14,15,16,17)
         --- 16, 17 and 18 are sometimes finicky
     """
-    H1 = hpfspec.HPFSpectrum(ftarg,targetname=targname)
-    H2 = hpfspec.HPFSpectrum(fcal,targetname=calname)
+    H1 = neidspec.HPFSpectrum(ftarg, targetname=targname)
+    H2 = neidspec.HPFSpectrum(fcal, targetname=calname)
     v_rvabs = np.linspace(-120.,120.,1001)
     vsinis1 = [0.0]
     
@@ -952,7 +952,7 @@ def calculate_ew(wl,fl,limit_left,limit_right):
             ax.plot(w,f)
             S = Spectrum1D(spectral_axis=w*u.AA,flux=f*u.Unit('erg cm-2 s-1 AA-1'))
             print('EW',equivalent_width(S,regions=SpectralRegion(4900.*u.AA,5100*u.AA))) # 19.9
-            print(hpfspec.spec_help.calculate_ew(w,f,4902,5098)) # 20.0, correct
+            print(neidspec.spec_help.calculate_ew(w,f,4902,5098)) # 20.0, correct
     """
     
     # for now just force it to be that we have the feature entirely within the bounds

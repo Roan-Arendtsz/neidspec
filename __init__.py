@@ -1,1 +1,1 @@
-from .hpfspec import *
+from .neidspec import *
