@@ -456,7 +456,7 @@ def vsini_from_calcurve_for_orders(hf_targ,hf_cal,rv_abs_targ,rv_abs_cal,
     c_cals = []
     s_cals = []
     c_targs = []
-    if plot_master:	
+    if plot_master:
         N = len(orders)
         if N>5:
             nrows = 2
@@ -508,7 +508,7 @@ def vsini_from_calcurve_for_orders(hf_targ,hf_cal,rv_abs_targ,rv_abs_cal,
             ylim = axx.flatten()[i].get_ylim()
             axx.flatten()[i].set_ylim(ylim[0]*0.9,ylim[1])
             utils.ax_apply_settings(axx.flatten()[i])
-    
+
     calc_vsini = np.array(calc_vsini)
     if plot_master:
         axx.flatten()[0].set_ylabel('CCF',fontsize=20)
@@ -669,9 +669,9 @@ def rvabs_for_orders(ww_all,ff_all,orders,v,M,v2_width=25.,plot=True,ax=None,bx=
     """
     rv_abs1 = []
     rv_abs2 = []
-    for o in orders:
+    for o in (np.array(orders) - 10):
         ww = ww_all[o]
-        ff = ff_all[o] 
+        ff = ff_all[o]
         r1, r2 = rvabs(ww,ff,v,M,v2_width=v2_width,plot=plot,ax=ax,bx=bx,verbose=False,n_points=n_points)#SEJ verbose=verbose
         rv_abs1.append(r1)
         rv_abs2.append(r2)
@@ -816,11 +816,11 @@ def vsini_from_hpf_spectra(ftarg,fcal,eps=0.6,
         - Generally order 5 is the best behaved (generally I only use orders 4,5,6,14,15,16,17)
         --- 16, 17 and 18 are sometimes finicky
     """
-    H1 = neidspec.HPFSpectrum(ftarg, targetname=targname)
-    H2 = neidspec.HPFSpectrum(fcal, targetname=calname)
+    H1 = neidspec.NEIDSpectrum(ftarg, targetname=targname)
+    H2 = neidspec.NEIDSpectrum(fcal, targetname=calname)
     v_rvabs = np.linspace(-120.,120.,1001)
     vsinis1 = [0.0]
-    
+
     v_calc_for_orders = []
     ccfs2 = []
 
@@ -828,12 +828,12 @@ def vsini_from_hpf_spectra(ftarg,fcal,eps=0.6,
     rvs1 = []
     amps1 = []
     ccfs1 = []
-    
+
     sigmas2 = []
     rvs2 = []
     amps2 = []
     ccfs2 = []
-    
+
     for i,o in enumerate(orders):
         # Target
         w1 = H1.w_shifted[o]
@@ -847,17 +847,17 @@ def vsini_from_hpf_spectra(ftarg,fcal,eps=0.6,
         m = np.isfinite(f2)
         w2 = w2[m]
         f2 = f2[m]
-        
+
         _sigmas1, _rvs1, _amps1, _ccfs1 = vsini_calcurve_for_wf(w1,f1,vsinis1,v,M,0.,eps=eps,plot=False,verbose=False)
         _sigmas2, _rvs2, _amps2, _ccfs2 = vsini_calcurve_for_wf(w2,f2,vsinis2,v,M,0.,eps=eps,plot=False,verbose=False)
-        print(np.min(_sigmas2),np.max(_sigmas2),_sigmas1)
+        # print(np.min(_sigmas2),np.max(_sigmas2),_sigmas1)
         try:
             v1 = scipy.interpolate.interp1d(_sigmas2,vsinis2)(_sigmas1)
         except Exception as e:
             print(e)
             print("Setting v1=0")
             v1 = np.array([0.])
-        
+
         v_calc_for_orders.append(v1[0])
         sigmas1.append(_sigmas1)
         rvs1.append(_rvs1)
@@ -868,7 +868,7 @@ def vsini_from_hpf_spectra(ftarg,fcal,eps=0.6,
         amps2.append(_amps2)
         ccfs2.append(_ccfs2)
         print("o={}, vsini= {}km/s".format(o,v1[0]))
-        
+
     vmean = np.median(v_calc_for_orders)
     vsigma = np.std(v_calc_for_orders)
     if plot:
@@ -876,12 +876,12 @@ def vsini_from_hpf_spectra(ftarg,fcal,eps=0.6,
         L = 5
         fig, axx = plt.subplots(nrows=N,ncols=L,dpi=200,sharex=True,sharey=True,figsize=(10,4))
         for i, o in enumerate(orders):
-            ax = axx.flatten()[i]         
+            ax = axx.flatten()[i]
             if i%L == 0:
                 ax.set_ylabel("Flux",fontsize=12)
             ax.set_title("o = {}, vsini = {:0.3f}km/s".format(o,v_calc_for_orders[i]),fontsize=7,y=0.97)
-                              
-            vsini = v_calc_for_orders[i]                              
+
+            vsini = v_calc_for_orders[i]
             # Calculating broadened vsini at the calculated vsini
             w2 = H2.w_shifted[o]
             f2 = H2.f_debl[o]
@@ -903,9 +903,135 @@ def vsini_from_hpf_spectra(ftarg,fcal,eps=0.6,
         savename = os.path.join(savedir,"{}_vsini.png".format(H1.target.name))
         fig.savefig(savename,dpi=200)
         print("Saved to {}".format(savename))
-    
+
     return vmean, vsigma
 
+
+def vsini_from_neid_spectra(ftarg, fcal, eps=0.6,
+                           v=np.linspace(-35., 35., 161),
+                           vsinis2=[0.05, 0.5, 1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 18., 20.],
+                           orders=[4, 5, 6, 14, 15, 16, 17], plot=False,
+                           targname="", calname="", savedir="out_vsini/",
+                           M=crosscorr.mask.Mask(crosscorr.mask.ESPRESSO_M3MASK, espresso=True)):
+    """
+    Calculate vsinis using CCFs. Requires using a slowly rotating template/calibration star.
+
+    INPUT:
+        ftarg - HPF spectrum filename for target star
+        fcal  - HPF spectrum filename for calibration star (needs to be slowly rotating, normally I use GJ 699)
+        v - the velocities to create the CCF used for the vsini calculation
+        eps - linear limbarkening coeff
+        vsinis2 - the vsinis used to generate the calibration curve
+        orders - the orders used to calculate the CCF
+        plot - If True, make a useful visualization plot
+        targname - Target name to add to the plot
+        calname - calibration star name to add to the plot
+        savedir - Save directory for the plot
+        M - ccf mask object
+
+    OUTPUT:
+        vsini - vsini in km/s (median of the vsini values for the different orders)
+        vsini_err - the error on the vsini (estimated from the standard deviation of the vsini point estimates for the different orders)
+
+    NOTES:
+        - Generally the target star and the calibration star should be of similar spectral type
+        - No tellurics are corrected for
+        - Generally order 5 is the best behaved (generally I only use orders 4,5,6,14,15,16,17)
+        --- 16, 17 and 18 are sometimes finicky
+    """
+    H1 = neidspec.NEIDSpectrum(ftarg, targetname=targname)
+    H2 = neidspec.NEIDSpectrum(fcal, targetname=calname)
+    v_rvabs = np.linspace(-120., 120., 1001)
+    vsinis1 = [0.0]
+
+    v_calc_for_orders = []
+    ccfs2 = []
+
+    sigmas1 = []
+    rvs1 = []
+    amps1 = []
+    ccfs1 = []
+
+    sigmas2 = []
+    rvs2 = []
+    amps2 = []
+    ccfs2 = []
+
+    for i, o in enumerate(np.array(orders) - 10):
+        # Target
+        w1 = H1.w_shifted[o]
+        f1 = H1.f_debl[o]
+        m = np.isfinite(f1)
+        w1 = w1[m]
+        f1 = f1[m]
+        # Cal
+        w2 = H2.w_shifted[o]
+        f2 = H2.f_debl[o]
+        m = np.isfinite(f2)
+        w2 = w2[m]
+        f2 = f2[m]
+        _sigmas1, _rvs1, _amps1, _ccfs1 = vsini_calcurve_for_wf(w1, f1, vsinis1, v, M, 0., eps=eps, plot=False,
+                                                                verbose=False)
+        _sigmas2, _rvs2, _amps2, _ccfs2 = vsini_calcurve_for_wf(w2, f2, vsinis2, v, M, 0., eps=eps, plot=False,
+                                                                verbose=False)
+        # print(np.min(_sigmas2), np.max(_sigmas2), _sigmas1)
+        try:
+            v1 = scipy.interpolate.interp1d(_sigmas2, vsinis2)(_sigmas1)
+        except Exception as e:
+            print(e)
+            print("Setting v1=0")
+            v1 = np.array([0.])
+
+        v_calc_for_orders.append(v1[0])
+        sigmas1.append(_sigmas1)
+        rvs1.append(_rvs1)
+        amps1.append(_amps1)
+        ccfs1.append(_ccfs1)
+        sigmas2.append(_sigmas2)
+        rvs2.append(_rvs2)
+        amps2.append(_amps2)
+        ccfs2.append(_ccfs2)
+        print("o={}, vsini= {}km/s".format(o, v1[0]))
+
+    vmean = np.median(v_calc_for_orders)
+    vsigma = np.std(v_calc_for_orders)
+    if plot:
+        N = 2
+        L = 5
+        fig, axx = plt.subplots(nrows=N, ncols=L, dpi=200, sharex=True, sharey=True, figsize=(10, 4))
+        for i, o in enumerate(np.array(orders) - 10):
+            ax = axx.flatten()[i]
+            if i % L == 0:
+                ax.set_ylabel("Flux", fontsize=12)
+            ax.set_title("o = {}, vsini = {:0.3f}km/s".format(o, v_calc_for_orders[i]), fontsize=7, y=0.97)
+
+            vsini = v_calc_for_orders[i]
+            # Calculating broadened vsini at the calculated vsini
+            w2 = H2.w_shifted[o]
+            f2 = H2.f_debl[o]
+            m = np.isfinite(f2)
+            w2 = w2[m]
+            f2 = f2[m]
+            _s, _rv, _amp, _ccf = vsini_calcurve_for_wf(w2, f2, [vsini], v, M=M, rv_abs=0., eps=eps, plot=False,
+                                                        verbose=False)
+            min_t = 1. - np.min(ccfs1[i][0])
+            ax.plot(v, ccfs1[i][0], color="crimson", lw=1)
+            ax.plot(v + rvs1[i][0] - _rv[0], (_ccf[0] - 1.) * (min_t / (1. - np.min(_ccf[0]))) + 1., color="black",
+                    alpha=1., ls="-", lw=1)  # reference, broadened
+            utils.ax_apply_settings(ax, ticksize=6)
+        if len(orders) < N * L:
+            for i in range(len(orders), N * L):
+                ax = axx.flatten()[i]
+                ax.set_visible(False)
+        fig.subplots_adjust(hspace=0.1, wspace=0.05, left=0.05, right=0.97)
+        fig.suptitle("{}: RV={:0.3f}km/s, vsini={:0.3f}+-{:0.3f}km/s".format(H1.target.name, H1.rv, vmean, vsigma),
+                     y=0.95)
+        utils.make_dir(savedir)
+        savename = os.path.join(savedir, "{}_vsini.png".format(H1.target.name))
+        fig.savefig(savename, dpi=200)
+        print("Saved to {}".format(savename))
+
+    return vmean, vsigma
 def calculate_ew_w_errors(wl,fl,e,limit_left,limit_right,N=100):
     """
     Main EW function to use, performs an MC sampling of spec_help.calculate_ew() to get errors
@@ -954,11 +1080,11 @@ def calculate_ew(wl,fl,limit_left,limit_right):
             print('EW',equivalent_width(S,regions=SpectralRegion(4900.*u.AA,5100*u.AA))) # 19.9
             print(neidspec.spec_help.calculate_ew(w,f,4902,5098)) # 20.0, correct
     """
-    
+
     # for now just force it to be that we have the feature entirely within the bounds
     assert limit_left > np.nanmin(wl)
     assert limit_right < np.nanmax(wl)
-    
+
     # need to calculate the wavelength bin sizes to match against limits
     # each wavelength bin has a center, left, and right. We assume that we are given the center
     # need to calculate left and right
@@ -967,34 +1093,34 @@ def calculate_ew(wl,fl,limit_left,limit_right):
     bin_size = np.concatenate(([bin_size[0]],bin_size))
     bin_left = wl - bin_size/2.
     bin_right = wl + bin_size/2.
-    
+
     # check to make sure which pixels are finite (i.e. not NaN) values to work with
     condition_finite = np.isfinite(fl)
-    
+
     # handle pixels entirely within the bounds:
     condition_all_in = (bin_left >= limit_left) & (bin_right <= limit_right)
-    
+
     # select the pixels that are finite and those that are all in
     use = np.nonzero(condition_finite & condition_all_in)[0]
     wluse = wl[use]
     fluse = fl[use]
-    
+
     # recalculate bin boundaries, just in case we lost any pixels due to NaN
     bins = np.diff(wluse)
     bins = np.concatenate(([bins[0]],bins))
-    
+
     # do the calculation and sum
     sub = (1. - fluse) * bins
-    
+
     # add the left extra bin
     leftmost_index = use[0]
     left_extra_bin = bin_right[leftmost_index-1] - limit_left
     left_extra_val = (1. - fl[leftmost_index-1]) * left_extra_bin
     #print(use)
-    
+
     # right extra bin
     rightmost_index = use[-1]
     right_extra_bin = limit_right - bin_left[rightmost_index+1]
     right_extra_val = (1. - fl[rightmost_index+1]) * right_extra_bin
-    
+
     return(np.sum(sub) + left_extra_val + right_extra_val)

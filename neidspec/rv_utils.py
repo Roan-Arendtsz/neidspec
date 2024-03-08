@@ -45,6 +45,7 @@ def rv_gaussian_fit_single_ccf(velocity, ccf, n_points=40,p0=[0,0.,3.0,0], mask_
             print("n_points too large, defaulting to all")
         ind_range = np.arange(len(velocity))
     ind_range = np.delete(ind_range, np.where(np.abs(ind_range - ind_min) < mask_inner))
+    # print(velocity[ind_range], ccf[ind_range])
     popt, pcov = curve_fit(gauss_function, velocity[ind_range], ccf[ind_range], p0=p0, maxfev=10000)
     if debug:
         print("Solution Param",popt)

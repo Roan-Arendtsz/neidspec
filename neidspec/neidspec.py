@@ -16,11 +16,11 @@ from . import target
 from .priors import PriorSet, UP, NP, JP
 
 DIRNAME = os.path.dirname(__file__)
-PATH_FLAT_DEBLAZED = os.path.join(DIRNAME, "data/hpf/flats/alphabright_fcu_sept18_deblazed.fits")
-PATH_FLAT_BLAZED = os.path.join(DIRNAME, "data/hpf/flats/alphabright_fcu_sept18.fits")
-PATH_TELLMASK = os.path.join(DIRNAME, "data/masks/telluric/telfit_telmask_conv17_thres0.995_with17area.dat")
+# PATH_FLAT_DEBLAZED = os.path.join(DIRNAME, "data/hpf/flats/alphabright_fcu_sept18_deblazed.fits")
+PATH_FLAT_BLAZED = os.path.join(DIRNAME, "data/neidmasterfile/neidMaster_InstrumentResponse_HR_20221111_v1.fits")
+PATH_TELLMASK = os.path.join(DIRNAME, "data/masks/telluric/20240221_tellneid_conv21_thres0.995_r115000.dat")
 PATH_SKYMASK = os.path.join(DIRNAME, "data/masks/sky/HPF_SkyEmmissionLineWavlMask_broadened_11111_Compressed.txt")
-PATH_CCF_MASK = crosscorr.mask.HPFSPECMATCHMASK
+PATH_CCF_MASK = crosscorr.mask.ESPRESSO_M3MASK
 PATH_WAVELENGTH = os.path.join(DIRNAME, "data/hpf/wavelength_solution/LFC_wavecal_scifiber_v2.fits")
 PATH_TARGETS = target.PATH_TARGETS
 
@@ -33,7 +33,7 @@ class NEIDSpectrum(object):
         H = HPFSpectrum(fitsfiles[1])
         H.plot_order(14,deblazed=True)
     """
-    path_flat_deblazed = PATH_FLAT_DEBLAZED
+    # path_flat_deblazed = PATH_FLAT_DEBLAZED
     path_flat_blazed = PATH_FLAT_BLAZED
     path_tellmask = PATH_TELLMASK
     path_skymask = PATH_SKYMASK
@@ -48,6 +48,10 @@ class NEIDSpectrum(object):
         self.sky_scaling_factor = sky_scaling_factor
         self.degrade_snr = degrade_snr
 
+        # Usable orders
+        self.start = 10 #3
+        self.end = 104 #-4
+
         # Read science frame
         self.hdu = astropy.io.fits.open(filename)
         self.header = self.hdu[0].header
@@ -55,42 +59,42 @@ class NEIDSpectrum(object):
         self.object = self.header["OBJECT"]
         try:
             self.qprog = self.header["QPROG"]
-        except Exception as e:
+        except Exception:
             self.qprog = np.nan
         midpoint_keywords = [f'SSBJD{i:03d}' for i in range(52, 174)]
         self.jd_midpoint = np.median(np.array([self.header[i] for i in midpoint_keywords]))
 
         # Read Flat
-        self.hdu_flat = astropy.io.fits.open(self.path_flat_deblazed)
-        self.header_flat = self.hdu_flat[0].header
-        self.flat_sci = self.hdu_flat[1].data
-        self.flat_sky = self.hdu_flat[2].data
+        # self.hdu_flat = astropy.io.fits.open(self.path_flat_deblazed)
+        # self.header_flat = self.hdu_flat[0].header
+        self.flat_sci = np.ones((self.end-self.start, 9216))
+        self.flat_sky = np.ones((self.end-self.start, 9216))
 
         # Read Science
-        self.e_sci = np.sqrt(self.hdu[4].data) * self.exptime
-        self.e_sky = np.sqrt(self.hdu[5].data) * self.exptime * self.sky_scaling_factor
-        self.e_cal = np.sqrt(self.hdu[6].data) * self.exptime
-        self.e = np.sqrt(self.hdu[4].data + self.hdu[5].data) * self.exptime
+        self.e_sci = np.sqrt(self.hdu[4].data[self.start:self.end]) * self.exptime
+        self.e_sky = np.sqrt(self.hdu[5].data[self.start:self.end]) * self.exptime * self.sky_scaling_factor
+        self.e_cal = np.sqrt(self.hdu[6].data[self.start:self.end]) * self.exptime
+        self.e = np.sqrt(self.hdu[4].data[self.start:self.end] + self.hdu[5].data[self.start:self.end]) * self.exptime
 
-        self.f_sky = (self.hdu[2].data * self.exptime / self.flat_sky) * self.sky_scaling_factor
-        self._f_sky = self.hdu[2].data * self.exptime
+        self.f_sky = (self.hdu[2].data[self.start:self.end] * self.exptime / self.flat_sky) * self.sky_scaling_factor
+        self._f_sky = self.hdu[2].data[self.start:self.end] * self.exptime
 
-        self.f_sci = self.hdu[1].data * self.exptime / self.flat_sci
-        self._f_sci = self.hdu[1].data * self.exptime
+        self.f_sci = self.hdu[1].data[self.start:self.end] * self.exptime / self.flat_sci
+        self._f_sci = self.hdu[1].data[self.start:self.end] * self.exptime
         self.f = self.f_sci - self.f_sky
         if self.degrade_snr != None:
             self.f_degrade, self.v_degrade = np.zeros_like(self.f), np.zeros_like(self.e)
-            for o in range(28):
+            for o in range(self.end-self.start):
                 self.f_degrade[o], self.v_degrade[o] = DegradeSNR(self.f[o], self.e[o] ** 2, self.degrade_snr)
 
         # Read in wavelength
-        self.w = self.hdu[7].data
-        self.w_sky = self.hdu[8].data
-        self.w_cal = self.hdu[9].data
+        self.w = self.hdu[7].data[self.start:self.end]
+        self.w_sky = self.hdu[8].data[self.start:self.end]
+        self.w_cal = self.hdu[9].data[self.start:self.end]
         self.drift_corrected = True
 
         # Inflate errors around tellurics and sky emission lines
-        mt = self.get_telluric_mask()
+        mt = self.get_telluric_mask(s=self.start, e=self.end)
         ms = self.get_sky_mask()
         if tell_err_factor == sky_err_factor:
             mm = mt | ms
@@ -99,16 +103,9 @@ class NEIDSpectrum(object):
             self.e[mt] *= tell_err_factor
             self.e[ms] *= sky_err_factor
 
-        #TODO: convert to NEID orders
-        self.sn5 = np.nanmedian(self.f[5] / self.e[5])
-        self.sn6 = np.nanmedian(self.f[6] / self.e[6])
-        self.sn14 = np.nanmedian(self.f[14] / self.e[14])
-        self.sn15 = np.nanmedian(self.f[15] / self.e[15])
-        self.sn16 = np.nanmedian(self.f[16] / self.e[16])
-        self.sn17 = np.nanmedian(self.f[17] / self.e[17])
-        self.sn18 = np.nanmedian(self.f[18] / self.e[18])
+        self.sn55 = np.nanmedian(self.f[55 - self.start] / self.e[55 - self.start])
+        self.sn56 = np.nanmedian(self.f[56 - self.start] / self.e[56 - self.start])
         self.sn = self.f / self.e
-
         if targetname == '':
             targetname = self.object
         self.target = target.Target(targetname, verbose=verbose)
@@ -118,7 +115,7 @@ class NEIDSpectrum(object):
             if verbose:
                 print('Barycentric shifting')
             v = np.linspace(-125, 125, 1501)
-            _, rabs = self.rvabs_for_orders(v, orders=[5, 6, 16, 17], plot=False, verbose=verbose)
+            _, rabs = self.rvabs_for_orders(v, orders=[55,56], plot=False, verbose=verbose)
             self.rv = np.median(rabs)
             self.redshift(rv=self.rv)
         else:
@@ -128,7 +125,7 @@ class NEIDSpectrum(object):
             self.redshift(rv=self.rv)
 
         if deblaze:
-            self.deblaze()
+            self.deblaze(s=self.start,e=self.end)
         # self.hdu.close()
         if setup_he10830:
             self._setup_he10830()
@@ -159,9 +156,9 @@ class NEIDSpectrum(object):
         self.e_debl_lownoise = self.f_debl_lownoise / self.sn_lownoise
 
     def __repr__(self):
-        return 'HPFSpec({},sn18={:0.1f})'.format(self.object, self.sn18)
+        return 'NEIDSpec({},sn55={:0.1f})'.format(self.object, self.sn55)
 
-    def get_telluric_mask(self, w=None, o=None):
+    def get_telluric_mask(self, w=None, o=None, s=None,e=None):
         """
         Return telluric mask interpolated onto a given grid.
         
@@ -203,7 +200,7 @@ class NEIDSpectrum(object):
         else:
             m[o]
 
-    def calculate_ccf_for_orders(self, v, orders=[3, 4, 5, 6, 14, 15, 16, 17, 18], plot=True):
+    def calculate_ccf_for_orders(self, v, orders=[55,56], plot=True):
         """
         Calculate CCF for given orders
 
@@ -218,9 +215,9 @@ class NEIDSpectrum(object):
         NOTES: Calculates on barycentric shifted (NOT ABS RV SHIFTED) and undeblazed version
         """
 
-        self.M = crosscorr.mask.Mask(self.path_ccf_mask)
+        self.M = crosscorr.mask.Mask(self.path_ccf_mask, espresso=True)
         w = spec_help.redshift(self.w, vo=self.berv, ve=0.)
-        self.ccf = crosscorr.calculate_ccf_for_hpf_orders(w, self.f, v, self.M, berv=0., orders=orders, plot=plot)
+        self.ccf = crosscorr.calculate_ccf_for_neid_orders(w, self.f, v, self.M, berv=0., orders=orders, plot=plot)
         return self.ccf
 
     def rvabs_for_orders(self, v, orders, v2_width=25.0, plot=True, ax=None, bx=None, verbose=True, n_points=40):
@@ -240,7 +237,7 @@ class NEIDSpectrum(object):
 
         NOTES: Calculates on barycentric shifted (NOT ABS RV SHIFTED) and undeblazed version
         """
-        self.M = crosscorr.mask.Mask(self.path_ccf_mask)
+        self.M = crosscorr.mask.Mask(self.path_ccf_mask, espresso=True)
         w = spec_help.redshift(self.w, vo=self.berv, ve=0.)
         # m = np.isfinite(self.f)
         rv1, rv2 = spec_help.rvabs_for_orders(w, self.f, orders, v, self.M, v2_width, plot, ax, bx, verbose, n_points)
@@ -282,17 +279,17 @@ class NEIDSpectrum(object):
             ff = rotbroad_help.broaden(ww, ff, vsini)
         return ff, ee
 
-    def deblaze(self):
+    def deblaze(self, s=None,e=None):
         """
         Deblaze spectrum, make available with self.f_debl
         """
         hdu = astropy.io.fits.open(self.path_flat_blazed)
-        self.f_sci_debl = self.hdu[1].data * self.exptime / hdu[1].data
-        self.f_sky_debl = self.hdu[2].data * self.exptime / hdu[2].data
+        self.f_sci_debl = self.hdu[1].data[s:e] * self.exptime / hdu[1].data[s:e]
+        self.f_sky_debl = self.hdu[2].data[s:e] * self.exptime / hdu[2].data[s:e]
         self.f_debl = self.f_sci_debl - self.f_sky_debl * self.sky_scaling_factor
         if self.degrade_snr != None:
-            self.f_degrade_debl = self.f_degrade / hdu[1].data
-        for i in range(28):
+            self.f_degrade_debl = self.f_degrade / hdu[1].data[s:e]
+        for i in range(e-s):
             self.f_debl[i] = self.f_debl[i] / np.nanmedian(self.f_debl[i])
             if self.degrade_snr != None:
                 self.f_degrade_debl[i] = self.f_degrade_debl[i] / np.nanmedian(self.f_degrade_debl[i])
@@ -321,13 +318,14 @@ class NEIDSpectrum(object):
         _f = rotbroad_help.broaden(ww, ff, vsini, u1=eps)
         return _f
 
-    def plot_order(self, o, deblazed=False, shifted=False, ax=None, color=None, plot_shaded=True, alpha=1.):
+    def plot_order(self, order, deblazed=False, shifted=False, ax=None, color=None, plot_shaded=True, alpha=1.):
         """
         Plot spectrum deblazed or not
         
         EXAMPLE:
             
         """
+        o = order - self.start
         mask_tell = np.genfromtxt(self.path_tellmask)
         mask_sky = np.genfromtxt(self.path_skymask)
         mt = self.get_telluric_mask()
@@ -336,7 +334,7 @@ class NEIDSpectrum(object):
         if ax is None:
             fig, ax = plt.subplots(dpi=200)
         if deblazed:
-            self.deblaze()
+            self.deblaze(s=self.start,e=self.end)
             f = self.f_debl[o]
             e = self.e_debl[o]
             f_mt = mask_tell[:, 1]
@@ -349,9 +347,11 @@ class NEIDSpectrum(object):
                 w = self.w[o]
                 w_mt = mask_tell[:, 0]
                 w_ms = mask_sky[:, 0]
+            ax.set_ylim(0, 1.3)
         else:
             f = self.f[o]
             e = self.e[o]
+
             f_mt = mask_tell[:, 1] * np.nanmax(f)
             f_ms = mask_sky[:, 1] * np.nanmax(f)
             if shifted:
@@ -362,6 +362,7 @@ class NEIDSpectrum(object):
                 w = self.w[o]
                 w_mt = mask_tell[:, 0]
                 w_ms = mask_sky[:, 0]
+        e[np.where(e < 0)[0]] = 0 # some e-7 negative values, probably due to python precision
         ax.errorbar(w, f, e, marker='o', lw=0.5, capsize=2, mew=0.5, elinewidth=0.5, markersize=2, color=color,
                     alpha=alpha)
         if plot_shaded:
@@ -372,13 +373,13 @@ class NEIDSpectrum(object):
 
         utils.ax_apply_settings(ax)
         ax.set_title('{}, {}, order={}, SN18={:0.2f}\nBJD={}, BERV={:0.5f}km/s'.format(self.object,
-                                                                                       self.basename, o, self.sn18,
+                                                                                       self.basename, order, self.sn55,
                                                                                        self.bjd, self.berv))
         ax.set_xlabel('Wavelength [A]')
         ax.set_ylabel('Flux')
         ax.set_xlim(np.nanmin(self.w[o]), np.nanmax(self.w[o]))
 
-    def plot_order2(self, o, deblazed=False, shifted=False, ax=None, color=None, plot_shaded=True, alpha=1., sep=0.,
+    def plot_order2(self, order, deblazed=False, shifted=False, ax=None, color=None, plot_shaded=True, alpha=1., sep=0.,
                     errorbar=True):
         """
         Plot spectrum deblazed or not
@@ -386,6 +387,8 @@ class NEIDSpectrum(object):
         EXAMPLE:
             
         """
+        o = order - self.start
+
         mask_tell = np.genfromtxt(self.path_tellmask)
         mask_sky = np.genfromtxt(self.path_skymask)
         mt = self.get_telluric_mask()
@@ -433,13 +436,13 @@ class NEIDSpectrum(object):
 
         utils.ax_apply_settings(ax)
         ax.set_title('{}, {}, order={}, SN18={:0.2f}\nBJD={}, BERV={:0.5f}km/s'.format(self.object,
-                                                                                       self.basename, o, self.sn18,
+                                                                                       self.basename, order, self.sn55,
                                                                                        self.bjd, self.berv))
         ax.set_xlabel('Wavelength [A]')
         ax.set_ylabel('Flux')
         ax.set_xlim(np.nanmin(self.w[o]), np.nanmax(self.w[o]))
 
-    def plot_order2ln(self, o, deblazed=False, shifted=False, ax=None, color=None, plot_shaded=True, alpha=1., sep=0.,
+    def plot_order2ln(self, order, deblazed=False, shifted=False, ax=None, color=None, plot_shaded=True, alpha=1., sep=0.,
                       errorbar=True):
         """
         Plot spectrum deblazed or not
@@ -447,6 +450,7 @@ class NEIDSpectrum(object):
         EXAMPLE:
             
         """
+        o = order - self.start
         mask_tell = np.genfromtxt(self.path_tellmask)
         mask_sky = np.genfromtxt(self.path_skymask)
         mt = self.get_telluric_mask()
@@ -494,14 +498,14 @@ class NEIDSpectrum(object):
 
         utils.ax_apply_settings(ax)
         ax.set_title('{}, {}, order={}, SN18={:0.2f}\nBJD={}, BERV={:0.5f}km/s'.format(self.object,
-                                                                                       self.basename, o, self.sn18,
+                                                                                       self.basename, order, self.sn55,
                                                                                        self.bjd, self.berv))
         ax.set_xlabel('Wavelength [A]')
         ax.set_ylabel('Flux')
         ax.set_xlim(np.nanmin(self.w[o]), np.nanmax(self.w[o]))
 
 
-class HPFSpecList(object):
+class NEIDSpecList(object):
 
     def __init__(self, splist=None, filelist=None, tell_err_factor=1., sky_err_factor=1., targetname='',
                  sky_scaling_factor=1., verbose=False):
@@ -510,15 +514,15 @@ class HPFSpecList(object):
         else:
             if np.size(sky_scaling_factor) == 1:
                 sky_scaling_factor = np.ones(len(filelist)) * sky_scaling_factor
-            self.splist = [HPFSpectrum(f, tell_err_factor=tell_err_factor,
+            self.splist = [NEIDSpectrum(f, tell_err_factor=tell_err_factor,
                                        sky_err_factor=sky_err_factor,
                                        targetname=targetname,
                                        sky_scaling_factor=s, verbose=verbose) for f, s in
                            zip(filelist, sky_scaling_factor)]
 
     @property
-    def sn18(self):
-        return [sp.sn18 for sp in self.splist]
+    def sn55(self):
+        return [sp.sn55 for sp in self.splist]
 
     @property
     def filenames(self):
@@ -542,8 +546,8 @@ class HPFSpecList(object):
 
     @property
     def df(self):
-        d = pd.DataFrame(zip(self.objects, self.filenames, self.exptimes, self.sn18, self.qprog, self.rv),
-                         columns=['OBJECT_ID', 'filename', 'exptime', 'sn18', 'qprog', 'rv'])
+        d = pd.DataFrame(zip(self.objects, self.filenames, self.exptimes, self.sn55, self.qprog, self.rv),
+                         columns=['OBJECT_ID', 'filename', 'exptime', 'sn55', 'qprog', 'rv'])
         return d
 
     def resample_order(self, ww, p=None, shifted=True):
