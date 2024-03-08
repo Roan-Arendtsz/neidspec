@@ -1,5 +1,1 @@
-include hpfspec/data/masks/ccf/*.mas
-include hpfspec/data/masks/telluric/*.dat
-include hpfspec/data/target_files/*.config
-include hpfspec/data/hpf/flats/*.fits
-include hpfspec/data/hpf/wavelength_solution/*.fits
+include neidspec/data/*
