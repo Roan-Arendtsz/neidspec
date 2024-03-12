@@ -279,7 +279,7 @@ class NEIDSpectrum(object):
             ff = rotbroad_help.broaden(ww, ff, vsini)
         return ff, ee
 
-    def deblaze(self, s=None,e=None):
+    def deblaze(self, s=10,e=104):
         """
         Deblaze spectrum, make available with self.f_debl
         """

@@ -1,1 +1,8 @@
 include neidspec/data/*
+include neidspec/data/masks/ccf/*.mas
+include neidspec/data/masks/telluric/*
+include neidspec/data/neidmasterfile/*
+include neidspec/data/masks/sky/*
+include neidspec/data/target_files/*.config
+include neidspec/data/neid/flats/*.fits
+include neidspec/data/neid/wavelength_solution/*.fits
