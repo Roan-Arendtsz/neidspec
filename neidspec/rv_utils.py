@@ -40,6 +40,7 @@ def rv_gaussian_fit_single_ccf(velocity, ccf, n_points=40,p0=[0,0.,3.0,0], mask_
         print("starting param",p0)
     ind_min = np.argmin(ccf)
     ind_range = np.arange(n_points*2+1) + ind_min - n_points
+
     if (ind_range > 160).any() or (ind_range < 0).any():
         if debug:
             print("n_points too large, defaulting to all")

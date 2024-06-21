@@ -243,7 +243,7 @@ class NEIDSpectrum(object):
         rv1, rv2 = spec_help.rvabs_for_orders(w, self.f, orders, v, self.M, v2_width, plot, ax, bx, verbose, n_points)
         return rv1, rv2
 
-    def resample_order(self, ww, p=None, vsini=None, shifted=True):
+    def resample_order(self, ww, p=None, vsini=None, shifted=True, order=101, plot=False):
         """
         Resample order to a given grid. Useful when comparing spectra and calculating chi2
 
@@ -252,24 +252,27 @@ class NEIDSpectrum(object):
         """
 
         if shifted:
-            w = self.w_shifted
+            w = self.w_shifted[order-10]
         else:
-            w = self.w
-
+            w = self.w[order-10]
         m = (w > ww.min() - 2.) & (w < ww.max() + 2.)
         w = w[m]
-        f = self.f_debl[m]
-        e = self.e_debl[m]
+        f = self.f_debl[order-10][m]
+        e = self.e_debl[order-10][m]
         if self.degrade_snr != None:
-            f = self.f_degrade_debl[m]
+            f = self.f_degrade_debl[order-10][m]
         m = np.isfinite(f)
         w = w[m]
         f = f[m]
         e = e[m]
-
-        ff = scipy.interpolate.interp1d(w, f, kind='linear')(ww)
-        ee = scipy.interpolate.interp1d(w, e, kind='linear')(ww)
-
+        # ff = scipy.interpolate.interp1d(w, f, kind='linear')(ww)
+        # ee = scipy.interpolate.interp1d(w, e, kind='linear')(ww)
+        ff = np.interp(ww, w, f)
+        ee = np.interp(ww, w, e)
+        # if plot:
+        #     plt.show()
+        #     plt.plot(ww, ff)
+        #     plt.savefig('/home/tehan/Downloads/target_.png')
         if p is not None:
             print('Applying Chebychev polynomial', p)
             ff *= np.polynomial.chebyshev.chebval(ww, p)

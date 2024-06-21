@@ -17,5 +17,6 @@ setup(name='neidspec',
       license='GPLv3',
       classifiers=['Topic :: Scientific/Engineering :: Astronomy'],
       keywords='NEID Spectra Astronomy',
+      package_data={'neidspec': ['data/neidmasterfile/*']},
       include_package_data=True
       )

@@ -634,9 +634,12 @@ def rvabs(ww,ff,v,M,v2_width=25.,plot=True,ax=None,bx=None,verbose=True,n_points
     if verbose:
         print('First iteration:  RVabs = {:0.5f}km/s'.format(vmin))
     # 2nd iteration
+
     v2 = np.linspace(vmin-v2_width,vmin+v2_width,161)
     c2 = crosscorr.calculate_ccf(ww,ff,v2,M.wi,M.wf,M.weight,0.)
     c2 = c2/np.nanmax(c2)
+
+
     if plot:
         if ax is None and bx is None:
             fig, (ax,bx)  = plt.subplots(ncols=2,figsize=(16,5))
