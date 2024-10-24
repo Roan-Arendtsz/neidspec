@@ -71,16 +71,19 @@ class NEIDSpectrum(object):
         self.flat_sky = np.ones((self.end-self.start, 9216))
 
         # Read Science
-        self.e_sci = np.sqrt(self.hdu[4].data[self.start:self.end]) * self.exptime
-        self.e_sky = np.sqrt(self.hdu[5].data[self.start:self.end]) * self.exptime * self.sky_scaling_factor
-        self.e_cal = np.sqrt(self.hdu[6].data[self.start:self.end]) * self.exptime
-        self.e = np.sqrt(self.hdu[4].data[self.start:self.end] + self.hdu[5].data[self.start:self.end]) * self.exptime
+        self.e_sci = np.sqrt(self.hdu[4].data[self.start:self.end])
+        self.e_sky = np.sqrt(self.hdu[5].data[self.start:self.end]) * self.sky_scaling_factor
+        try:
+            self.e_cal = np.sqrt(self.hdu[6].data[self.start:self.end])
+        except Exception:
+            self.e_cal = np.nan
+        self.e = np.sqrt(self.hdu[4].data[self.start:self.end] + self.hdu[5].data[self.start:self.end])
 
-        self.f_sky = (self.hdu[2].data[self.start:self.end] * self.exptime / self.flat_sky) * self.sky_scaling_factor
-        self._f_sky = self.hdu[2].data[self.start:self.end] * self.exptime
+        self.f_sky = (self.hdu[2].data[self.start:self.end] / self.flat_sky) * self.sky_scaling_factor
+        self._f_sky = self.hdu[2].data[self.start:self.end]
 
-        self.f_sci = self.hdu[1].data[self.start:self.end] * self.exptime / self.flat_sci
-        self._f_sci = self.hdu[1].data[self.start:self.end] * self.exptime
+        self.f_sci = self.hdu[1].data[self.start:self.end] / self.flat_sci
+        self._f_sci = self.hdu[1].data[self.start:self.end]
         self.f = self.f_sci - self.f_sky
         if self.degrade_snr != None:
             self.f_degrade, self.v_degrade = np.zeros_like(self.f), np.zeros_like(self.e)
@@ -90,7 +93,10 @@ class NEIDSpectrum(object):
         # Read in wavelength
         self.w = self.hdu[7].data[self.start:self.end]
         self.w_sky = self.hdu[8].data[self.start:self.end]
-        self.w_cal = self.hdu[9].data[self.start:self.end]
+        try:
+            self.w_cal = self.hdu[9].data[self.start:self.end]
+        except Exception:
+            self.w_cal = np.nan
         self.drift_corrected = True
 
         # Inflate errors around tellurics and sky emission lines
@@ -110,12 +116,16 @@ class NEIDSpectrum(object):
             targetname = self.object
         self.target = target.Target(targetname, verbose=verbose)
         self.bjd, self.berv = self.target.calc_barycentric_velocity(self.jd_midpoint, 'McDonald Observatory')
-
         if ccf_redshift:
             if verbose:
                 print('Barycentric shifting')
-            v = np.linspace(-125, 125, 1501)
-            _, rabs = self.rvabs_for_orders(v, orders=[55,56], plot=False, verbose=verbose)
+            # v = np.linspace(-125, 125, 1501)
+            plot = False
+            # if self.basename in ['neidL2_20210423T104635.fits']:
+            #     plot = True
+            v = np.linspace(-175, 175, 2501)
+            _, rabs = self.rvabs_for_orders(v, orders=[55,56,91], plot=plot, verbose=verbose)
+            print(self.target, rabs)
             self.rv = np.median(rabs)
             self.redshift(rv=self.rv)
         else:
@@ -240,10 +250,16 @@ class NEIDSpectrum(object):
         self.M = crosscorr.mask.Mask(self.path_ccf_mask, espresso=True)
         w = spec_help.redshift(self.w, vo=self.berv, ve=0.)
         # m = np.isfinite(self.f)
+        # if self.basename == 'TIC 437039407_17_SpectraAveraged_joe.fits':
+        #     hdu = astropy.io.fits.open(self.path_flat_blazed)
+        #     f_sci = (self.hdu[1].data[10:104]) * hdu[1].data[10:104] / self.exptime
+        #     # plt.plot(w[91],f_sci[91])
+        #     # plt.show()
+        #     self.f = f_sci
         rv1, rv2 = spec_help.rvabs_for_orders(w, self.f, orders, v, self.M, v2_width, plot, ax, bx, verbose, n_points)
         return rv1, rv2
 
-    def resample_order(self, ww, p=None, vsini=None, shifted=True, order=101, plot=False):
+    def resample_order(self, ww, p=None, vsini=None, shifted=True, order=101, deblazed=False, plot=False):
         """
         Resample order to a given grid. Useful when comparing spectra and calculating chi2
 
@@ -257,8 +273,13 @@ class NEIDSpectrum(object):
             w = self.w[order-10]
         m = (w > ww.min() - 2.) & (w < ww.max() + 2.)
         w = w[m]
-        f = self.f_debl[order-10][m]
-        e = self.e_debl[order-10][m]
+        if deblazed:
+            f = self.hdu[1].data[order][m]
+            e = np.sqrt(self.hdu[4].data[order][m])
+        else:
+            f = self.f_debl[order-10][m]
+            e = self.e_debl[order-10][m]
+
         if self.degrade_snr != None:
             f = self.f_degrade_debl[order-10][m]
         m = np.isfinite(f)

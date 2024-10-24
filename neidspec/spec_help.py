@@ -627,18 +627,18 @@ def rvabs(ww,ff,v,M,v2_width=25.,plot=True,ax=None,bx=None,verbose=True,n_points
             rvabs(ww,ff,v,M,plot=False)
     """
     # 1st iteration
+    # print(ww,ff,v,M.wi,M.wf,M.weight)
     c = crosscorr.calculate_ccf(ww,ff,v,M.wi,M.wf,M.weight,0.) # THE LAST ARGUMENT CHANGES GJ 905 FROM -75.8 to -77.8km/s
+    # print(c)
     c = c/np.nanmax(c)
     imin = np.argmin(c)
     vmin = v[imin]
     if verbose:
         print('First iteration:  RVabs = {:0.5f}km/s'.format(vmin))
     # 2nd iteration
-
     v2 = np.linspace(vmin-v2_width,vmin+v2_width,161)
     c2 = crosscorr.calculate_ccf(ww,ff,v2,M.wi,M.wf,M.weight,0.)
     c2 = c2/np.nanmax(c2)
-
 
     if plot:
         if ax is None and bx is None:
@@ -653,6 +653,7 @@ def rvabs(ww,ff,v,M,v2_width=25.,plot=True,ax=None,bx=None,verbose=True,n_points
         utils.ax_apply_settings(ax)
         utils.ax_apply_settings(bx)
         bx.plot(v2,c2)
+        plt.show()
     amp, vmin2, sigm, _ = rv_utils.rv_gaussian_fit_single_ccf(v2,c2,
                                                                 p0=[0, vmin, 3.0, 0],
                                                                 debug=False,n_points=int(n_points),
@@ -675,6 +676,8 @@ def rvabs_for_orders(ww_all,ff_all,orders,v,M,v2_width=25.,plot=True,ax=None,bx=
     for o in (np.array(orders) - 10):
         ww = ww_all[o]
         ff = ff_all[o]
+        # print(np.isnan(ww).any(), np.isnan(ff).any())
+        # print(np.where(np.isnan(ff)))
         r1, r2 = rvabs(ww,ff,v,M,v2_width=v2_width,plot=plot,ax=ax,bx=bx,verbose=False,n_points=n_points)#SEJ verbose=verbose
         rv_abs1.append(r1)
         rv_abs2.append(r2)
