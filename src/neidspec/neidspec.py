@@ -1,5 +1,4 @@
 from __future__ import print_function
-import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import astropy.io
@@ -13,7 +12,7 @@ from . import utils
 from . import spec_help
 from . import rotbroad_help
 from . import target
-from .priors import PriorSet, UP, NP, JP
+from .priors import PriorSet, UP
 
 DIRNAME = os.path.dirname(__file__)
 # PATH_FLAT_DEBLAZED = os.path.join(DIRNAME, "data/hpf/flats/alphabright_fcu_sept18_deblazed.fits")
@@ -94,7 +93,7 @@ class NEIDSpectrum(object):
 
     def __init__(self, filename, targetname='', deblaze=True, tell_err_factor=1., ccf_redshift=True,
                  sky_err_factor=1., sky_scaling_factor=1.0, verbose=False, setup_he10830=False, rv=0.,
-                 degrade_snr=None, add_vsini=10):
+                 degrade_snr=None, add_vsini=10, plot_ccf=False, outputdirectory=None,):
         self.filename = filename
         self.basename = filename.split(os.sep)[-1]
         self.sky_scaling_factor = sky_scaling_factor
@@ -173,15 +172,29 @@ class NEIDSpectrum(object):
         if ccf_redshift:
             if verbose:
                 print('Barycentric shifting')
-            # v = np.linspace(-125, 125, 1501)
-            plot = False
-            # if self.basename in ['neidL2_20210423T104635.fits']:
-            #     plot = True
-            v = np.linspace(-175, 175, 2501)
-            _, rabs = self.rvabs_for_orders(v, orders=[55,56,91], plot=plot, verbose=verbose)
+            v = np.linspace(-175, 175, 1501)
+            _, rabs = self.rvabs_for_orders(
+                v=v,
+                orders=[55,56,91],
+                plot=plot_ccf,
+                verbose=verbose,
+                save_name=outputdirectory,
+            )
             print(self.target, rabs)
             self.rv = np.median(rabs)
             self.redshift(rv=self.rv)
+        # if ccf_redshift:
+        #     if verbose:
+        #         print('Barycentric shifting')
+        #     # v = np.linspace(-125, 125, 1501)
+        #     plot = False
+        #     # if self.basename in ['neidL2_20210423T104635.fits']:
+        #     #     plot = True
+        #     v = np.linspace(-175, 175, 2501)
+        #     _, rabs = self.rvabs_for_orders(v, orders=[55,56,91], plot=plot, verbose=verbose)
+        #     print(self.target, rabs)
+        #     self.rv = np.median(rabs)
+        #     self.redshift(rv=self.rv)
         else:
             self.rv = rv
             if verbose:
@@ -307,7 +320,7 @@ class NEIDSpectrum(object):
         self.ccf = crosscorr.calculate_ccf_for_neid_orders(w, self.f, v, self.M, berv=0., orders=orders, plot=plot)
         return self.ccf
 
-    def rvabs_for_orders(self, v, orders, v2_width=25.0, plot=True, ax=None, bx=None, verbose=True, n_points=40):
+    def rvabs_for_orders(self, v, orders, v2_width=25.0, plot=True, ax=None, bx=None, verbose=True, n_points=40, save_name=None):
         """
         Calculate absolute RV for different orders using two iterations (course + fine fitting Gaussian)
 
@@ -333,7 +346,16 @@ class NEIDSpectrum(object):
         #     # plt.plot(w[91],f_sci[91])
         #     # plt.show()
         #     self.f = f_sci
-        rv1, rv2 = spec_help.rvabs_for_orders(w, self.f, orders, v, self.M, v2_width, plot, ax, bx, verbose, n_points)
+        rv1, rv2 = spec_help.rvabs_for_orders(
+            w,
+            self.f,
+            orders,
+            v,
+            self.M,
+            plot=plot,
+            verbose=verbose,
+            save_name=save_name
+        )
         return rv1, rv2
 
     def resample_order(self, ww, p=None, vsini=None, shifted=True, order=101, deblazed=False, plot=False):

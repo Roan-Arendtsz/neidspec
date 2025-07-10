@@ -1,1 +1,0 @@
-from .neidspec import *

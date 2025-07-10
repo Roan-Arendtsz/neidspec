@@ -8,9 +8,6 @@ import scipy.interpolate
 import numpy as np
 import pandas as pd
 import scipy.ndimage.filters
-from scipy.interpolate import interp1d, CubicSpline, griddata, interpn
-from scipy.ndimage.filters import correlate1d
-import astropy.constants as aconst
 import seaborn as sns
 import scipy.interpolate
 import h5py
@@ -21,6 +18,8 @@ import neidspec
 from . import utils
 from . import rv_utils
 from . import rotbroad_help
+from scipy.optimize import curve_fit
+
 c = 299792.4580   # [km/s]
 cp = sns.color_palette("colorblind")
 HPFGJ699MASK = crosscorr.mask.HPFGJ699MASK
@@ -373,7 +372,7 @@ def vsini_calcurve(w_all,f_all,vsinis,v,M,rv_abs,orders=[3,4,5,6,14,15,16,17,18]
     ccfs = []
     rvs = []
     amplitudes = []
-    colors = utils.get_cmap_colors(N=len(vsinis),cmap="coolwarm")
+    colors = utils.get_cmap_colors(N=len(vsinis), cmap="coolwarm")
     for i, vs in enumerate(vsinis):
         _ccfs = []
         for o in orders:
@@ -384,15 +383,15 @@ def vsini_calcurve(w_all,f_all,vsinis,v,M,rv_abs,orders=[3,4,5,6,14,15,16,17,18]
             # BEFORE 20190730
             #wb, fb = utils.rot_broaden_spectrum(w,f,eps=eps,vsini=vs,plot=False)
             #c = ccf.ccf.calculate_ccf(wb,fb,v,M.wi,M.wf,M.weight,-rv_abs)
-            fb = rotbroad_help.broaden(w,f,vsini=vs)
+            fb = rotbroad_help.broaden(w, f, vsini=vs)
             c = crosscorr.calculate_ccf(w,fb,v,M.wi,M.wf,M.weight,-rv_abs)
             _ccfs.append(c)
             #ax.plot(v,c/np.max(c),label="vsini={:0.2f}km/s".format(vs),color=colors[i])
         _ccf_all = np.sum(_ccfs,axis=0)
         _ccf_all = _ccf_all/np.max(_ccf_all)
-        amp, rv, sigm, _ = rv_utils.rv_gaussian_fit_single_ccf(v,_ccf_all,
-                                                                p0=[0, 0.0, 3.0, 0],
-                                                                debug=debug,n_points=n_points)
+        amp, rv, sigm, _ = rv_utils.rv_gaussian_fit_single_ccf(v, _ccf_all,
+                                                               p0=[0, 0.0, 3.0, 0],
+                                                               debug=debug, n_points=n_points)
         sigmas.append(sigm)
         rvs.append(rv)
         amplitudes.append(amp)
@@ -571,7 +570,7 @@ def vsini_calcurve_for_wf(w,f,vsinis,v,M,rv_abs,eps=0.6,debug=False,n_points=50,
     if plot:
         if ax is None:
             fig, ax = plt.subplots()
-        colors = utils.get_cmap_colors(N=len(vsinis),cmap="coolwarm")
+        colors = utils.get_cmap_colors(N=len(vsinis), cmap="coolwarm")
     for i, vs in enumerate(vsinis):
         if verbose: print("it={:3.0f}, vsini={:6.3f}km/s".format(i,vs))
         if vs==0:
@@ -579,7 +578,7 @@ def vsini_calcurve_for_wf(w,f,vsinis,v,M,rv_abs,eps=0.6,debug=False,n_points=50,
             wb, fb = w, f
         else:
             #wb, fb = utils.rot_broaden_spectrum(w,f,eps=eps,vsini=vs,plot=False)
-            fb = rotbroad_help.broaden(w,f,vsini=vs,u1=eps)
+            fb = rotbroad_help.broaden(w, f, vsini=vs, u1=eps)
             wb = w
         c = crosscorr.calculate_ccf(wb,fb,v,M.wi,M.wf,M.weight,-rv_abs)
         c = c/np.max(c)
@@ -587,10 +586,10 @@ def vsini_calcurve_for_wf(w,f,vsinis,v,M,rv_abs,eps=0.6,debug=False,n_points=50,
             ax.plot(v,c,label="vsini={:0.2f}km/s".format(vs),color=colors[i])
         if plot: plot_fit=True
         else: plot_fit=False
-        amp, rv, sigm, _ = rv_utils.rv_gaussian_fit_single_ccf(v,c,
-                                                                p0=[0, 0.0, 3.0, 0],
-                                                                debug=debug,n_points=n_points,
-                                                                plot_fit=plot_fit,ax=ax)
+        amp, rv, sigm, _ = rv_utils.rv_gaussian_fit_single_ccf(v, c,
+                                                               p0=[0, 0.0, 3.0, 0],
+                                                               debug=debug, n_points=n_points,
+                                                               plot_fit=plot_fit, ax=ax)
         sigmas.append(sigm)
         rvs.append(rv)
         amplitudes.append(amp)
@@ -607,85 +606,127 @@ def vsini_calcurve_for_wf(w,f,vsinis,v,M,rv_abs,eps=0.6,debug=False,n_points=50,
     return np.array(sigmas), np.array(rvs), np.array(amplitudes), np.array(ccfs)
 
 
-def rvabs(ww,ff,v,M,v2_width=25.,plot=True,ax=None,bx=None,verbose=True,n_points=40):
-    """
-    Get absolute RVs. Note, this is relative to the mask provided
+def gaussian_with_slope(v, A, v0, sigma, m, c):
+    return -A * np.exp(-0.5 * ((v - v0) / sigma)**2) + m * v + c
 
-    INPUT:
-       ww - wavelengths
-       ff - fluxes
-       v - velocities for CCF generation
-       M - Mask object
-    
-    EXAMPLE:
-        # loop through all rvabs for given HPF orders
-        M = crosscorr.mask.Mask("0_CCFS/GJ699/20190309/MASK/0_COMBINED/combined_stellarframe.mas")
-        for o in [5,6,14,15,16,17,18]:
-            ww = ww_all_targ[o]
-            ff = ff_all_targ[o] 
-            v = np.linspace(-120,120,2000)
-            rvabs(ww,ff,v,M,plot=False)
+def rvabs(
+    ww, ff, v, M,
+    plot=True,
+    ax=None,
+    verbose=True
+):
     """
-    # 1st iteration
-    # print(ww,ff,v,M.wi,M.wf,M.weight)
-    c = crosscorr.calculate_ccf(ww,ff,v,M.wi,M.wf,M.weight,0.) # THE LAST ARGUMENT CHANGES GJ 905 FROM -75.8 to -77.8km/s
-    # print(c)
-    c = c/np.nanmax(c)
-    imin = np.argmin(c)
-    vmin = v[imin]
+    Get absolute RVs by fitting an inverted Gaussian + slope to the CCF.
+    """
+    # --- convert to arrays and drop NaN/Inf ---
+    ff = np.asarray(ff, dtype=np.float64)
+    ww = np.asarray(ww, dtype=np.float64)
+    mask = np.invert(np.isnan(ff))
+
+    ff = ff[mask]
+    ww = ww[mask]
+    print("M.wi:", M.wi)
+    print("M.wf:", M.wf)
+    print("min/max ww:", np.min(ww), np.max(ww))
+    # --- Compute CCF ---
+    ccf = crosscorr.calculate_ccf(ww, ff, v, M.wi, M.wf, M.weight, 0.)
+    ccf /= np.nanmax(ccf)
+
+    # --- Initial fit guess ---
+    A0 = 1.0 - np.min(ccf)
+    v0_guess = v[np.argmin(ccf)]
+    sigma0 = 5.0
+    m0 = (ccf[-1] - ccf[0]) / (v[-1] - v[0])
+    c0 = np.mean(ccf)
+    p0 = [A0, v0_guess, sigma0, m0, c0]
+    if not np.all(np.isfinite(ccf)):
+        print("BAD CCF:", ccf[:20])
+        print("v:", v)
+        raise ValueError("Invalid CCF values (NaN or inf) detected.")
+    # --- Fit ---
+    popt, _ = curve_fit(gaussian_with_slope, v, ccf, p0=p0)
+    A_fit, v0_fit, sigma_fit, m_fit, c_fit = popt
+
     if verbose:
-        print('First iteration:  RVabs = {:0.5f}km/s'.format(vmin))
-    # 2nd iteration
-    v2 = np.linspace(vmin-v2_width,vmin+v2_width,161)
-    c2 = crosscorr.calculate_ccf(ww,ff,v2,M.wi,M.wf,M.weight,0.)
-    c2 = c2/np.nanmax(c2)
+        print(f"[rvabs] Order {getattr(M, 'order','?')}: fit RV = {v0_fit:.3f} km/s")
 
-    if plot:
-        if ax is None and bx is None:
-            fig, (ax,bx)  = plt.subplots(ncols=2,figsize=(16,5))
-        ax.plot(v,c)
-        ax.plot(vmin,c[imin],marker='o',color='crimson')
-        ax.set_xlabel('v [km/s]')
-        bx.set_xlabel('v [km/s]')
-        ax.set_ylabel('CCF')
-        bx.set_ylabel('CCF')
-        ax.set_title('RV-abs = {:0.4f}km/s'.format(vmin))
+    # --- Plot ---
+    if plot and ax is not None:
+        ax.plot(v, ccf, lw=1, label="CCF")
+        v_fit = np.linspace(v[0], v[-1], 500)
+        ax.plot(v_fit, gaussian_with_slope(v_fit, *popt), '-', color="forestgreen", lw=1, label="Fit")
+        ax.axvline(v0_fit, color="red", ls="--", lw=0.8)
+        ax.set_title(f"Order {getattr(M,'order','?')}: {v0_fit:.2f} km/s", fontsize=9)
+        ax.tick_params(labelsize=8)
+        ax.legend(fontsize=6, loc="best", frameon=False)
         utils.ax_apply_settings(ax)
-        utils.ax_apply_settings(bx)
-        bx.plot(v2,c2)
-        plt.show()
-    amp, vmin2, sigm, _ = rv_utils.rv_gaussian_fit_single_ccf(v2,c2,
-                                                                p0=[0, vmin, 3.0, 0],
-                                                                debug=False,n_points=int(n_points),
-                                                                plot_fit=plot,ax=bx)
-    if verbose:
-        print('Second iteration: RVabs = {:0.5f}km/s, sigma={:0.5f}'.format(vmin2,sigm))
-    return vmin, vmin2
 
-def rvabs_for_orders(ww_all,ff_all,orders,v,M,v2_width=25.,plot=True,ax=None,bx=None,verbose=True,n_points=40):
+    vmin_simple = v[np.argmin(ccf)]
+    return vmin_simple, v0_fit
+def rvabs_for_orders(
+    ww_all,
+    ff_all,
+    orders,
+    v,
+    M,
+    plot=True,
+    verbose=True,
+    save_name=None
+):
     """
-    Same as rvabs, except loop for different orders. Useful for error estimation
-    
-    EXAMPLE:
-        v = np.linspace(-120,120,2000)
-        rr1, rr2 = rvabs_for_orders(ww_all_targ,ff_all_targ,[4,5,6,14,15,16,17,18],v,M,plot=True,verbose=True)
-        np.mean(rr1), np.std(rr1), np.mean(rr2), np.std(rr2)
+    Loop over orders and plot all panels in one figure.
     """
     rv_abs1 = []
     rv_abs2 = []
-    for o in (np.array(orders) - 10):
+
+    n_orders = len(orders)
+
+    if plot:
+        ncols = 2
+        nrows = int(np.ceil(n_orders / ncols))
+        fig, axes = plt.subplots(
+            nrows=nrows,
+            ncols=ncols,
+            figsize=(3.8 * ncols, 2.8 * nrows),
+            constrained_layout=True
+        )
+        axes = axes.flatten()
+    else:
+        axes = [None] * n_orders
+
+    for i, o in enumerate(orders):
         ww = ww_all[o]
         ff = ff_all[o]
-        # print(np.isnan(ww).any(), np.isnan(ff).any())
-        # print(np.where(np.isnan(ff)))
-        r1, r2 = rvabs(ww,ff,v,M,v2_width=v2_width,plot=plot,ax=ax,bx=bx,verbose=False,n_points=n_points)#SEJ verbose=verbose
+        if verbose:
+            print(f"\nOrder {o}:")
+        # Create a mask object per order if needed:
+        M.order = o
+        r1, r2 = rvabs(
+            ww,
+            ff,
+            v,
+            M,
+            plot=plot,
+            ax=axes[i],
+            verbose=verbose
+        )
         rv_abs1.append(r1)
         rv_abs2.append(r2)
-    if verbose:
-        print('RVabs iteration #1: {:8.5f}+-{:8.5f}km/s'.format(np.mean(rv_abs1),np.std(rv_abs1)))
-        print('RVabs iteration #2: {:8.5f}+-{:8.5f}km/s'.format(np.mean(rv_abs2),np.std(rv_abs2)))
-    return np.array(rv_abs1), np.array(rv_abs2)
 
+    if verbose:
+        print('\nSummary:')
+        print('RV grid min: {:8.3f} ± {:8.3f} km/s'.format(np.mean(rv_abs1), np.std(rv_abs1)))
+        print('RV fit min : {:8.3f} ± {:8.3f} km/s'.format(np.mean(rv_abs2), np.std(rv_abs2)))
+
+    if plot:
+        # Remove unused axes
+        for j in range(i + 1, len(axes)):
+            fig.delaxes(axes[j])
+        if save_name is not None:
+            fig.savefig(f"{save_name}/rvabs_all_orders.pdf", dpi=300)
+        # plt.show()
+
+    return np.array(rv_abs1), np.array(rv_abs2)
 def vsini_from_calcurve_for_orders_with_rvabs(hf_cal,hf_targ,name_cal,name_targ,v_rvabs,v,M,vsinis,
                                               orders=[4,5,6,14,15,16,17,18],savedir="0_vsini/20190311/",rvabs_cal=None,rvabs_targ=None):
     """
@@ -898,7 +939,7 @@ def vsini_from_hpf_spectra(ftarg,fcal,eps=0.6,
             min_t = 1.-np.min(ccfs1[i][0])
             ax.plot(v,ccfs1[i][0],color="crimson",lw=1)
             ax.plot(v+rvs1[i][0]-_rv[0],(_ccf[0]-1.)*(min_t/(1.-np.min(_ccf[0])))+1.,color="black",alpha=1.,ls="-",lw=1) # reference, broadened
-            utils.ax_apply_settings(ax,ticksize=6)
+            utils.ax_apply_settings(ax, ticksize=6)
         if len(orders) < N*L:
             for i in range(len(orders),N*L):
                 ax = axx.flatten()[i]

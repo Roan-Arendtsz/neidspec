@@ -112,4 +112,4 @@ venv.bak/
 # mypy
 .mypy_cache/
 .DS_Store
-neidspec/data/target_files/
+src/neidspec/data/target_files/

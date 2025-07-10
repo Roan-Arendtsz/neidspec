@@ -1,8 +1,6 @@
 import numpy as np
 import os, sys
-import datetime
-import pandas as pd
-from astropy.io import ascii, fits
+from astropy.io import fits
 from scipy.interpolate import interp1d
 
 from astropy.constants import c

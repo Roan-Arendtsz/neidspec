@@ -1,7 +1,4 @@
 import barycorrpy
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
 import configparser
 import os
 from astroquery.mast import Catalogs
@@ -111,8 +108,8 @@ class Target(object):
         """
         #bjd, berv = bary.bjdbrv(jdtime,self.ra,self.dec,obsname=self.obsname,
         #                           pmra=self.pmra,pmdec=self.pmdec,rv=self.rv,parallax=self.px,epoch=self.epoch)
-        bjd, berv = bary.bjdbrv(jdtime,self.ra,self.dec,obsname=obs,
-                                   pmra=self.pmra,pmdec=self.pmdec,rv=self.rv,parallax=self.px,epoch=self.epoch)
+        bjd, berv = bary.bjdbrv(jdtime, self.ra, self.dec, obsname=obs,
+                                pmra=self.pmra, pmdec=self.pmdec, rv=self.rv, parallax=self.px, epoch=self.epoch)
         return bjd, berv/1000.
     
     def __repr__(self):
