@@ -406,9 +406,8 @@ class NEIDSpectrum(object):
         """
         Deblaze spectrum, make available with self.f_debl
         """
-        hdu = astropy.io.fits.open(self.path_flat_blazed)
-        self.f_sci_debl = self.hdu[1].data[s:e] * self.exptime / hdu[1].data[s:e]
-        self.f_sky_debl = self.hdu[2].data[s:e] * self.exptime / hdu[2].data[s:e]
+        self.f_sci_debl = self.hdu[1].data[s:e] * self.exptime / self.hdu[15].data[s:e]
+        self.f_sky_debl = self.hdu[2].data[s:e] * self.exptime / self.hdu[16].data[s:e]
         self.f_debl = self.f_sci_debl - self.f_sky_debl * self.sky_scaling_factor
         if self.degrade_snr != None:
             self.f_degrade_debl = self.f_degrade / hdu[1].data[s:e]
