@@ -92,7 +92,7 @@ class NEIDSpectrum(object):
     path_wavelength_solution = PATH_WAVELENGTH
 
     def __init__(self, filename, targetname='', deblaze=True, tell_err_factor=1., ccf_redshift=True,
-                 sky_err_factor=1., sky_scaling_factor=1.0, verbose=False, setup_he10830=False, rv=0.,
+                 sky_err_factor=1., sky_scaling_factor=1.0, verbose=False, target_kwargs={},setup_he10830=False, rv=0.,
                  degrade_snr=None, add_vsini=10, plot_ccf=False, outputdirectory=None,):
         self.filename = filename
         self.basename = filename.split(os.sep)[-1]
@@ -167,7 +167,7 @@ class NEIDSpectrum(object):
         self.sn = self.f / self.e
         if targetname == '':
             targetname = self.object
-        self.target = target.Target(targetname, verbose=verbose)
+        self.target = target.Target(targetname, verbose=verbose,**target_kwargs)
         self.bjd, self.berv = self.target.calc_barycentric_velocity(self.jd_midpoint, 'McDonald Observatory')
         if ccf_redshift:
             if verbose:
